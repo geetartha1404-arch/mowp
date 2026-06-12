@@ -1,0 +1,208 @@
+IMPLEMENTATION PLAN
+AI-Assisted Personal Work Management OS
+Antigravity IDE Build Guide  ·  June 2026
+
+This plan is structured for Google Antigravity 2.0. Each phase includes an Antigravity agent prompt you can paste directly to kick off that phase. Build in sequence — each phase depends on the previous.
+
+Build Overview
+Phase
+Focus
+Est. Sessions
+Output
+0
+Repo + Supabase + Auth
+1–2
+Working login/signup, DB ready
+1
+Frontend shell + routing
+2–3
+All pages stubbed, nav working
+2
+Database schema + RLS
+1
+All tables, RLS policies, seed data
+3
+Inbox capture UI
+2
+Users can add and view work items
+4
+AI classification
+2
+Items auto-classified on creation
+5
+Weekly planning board
+2–3
+Kanban board functional
+6
+Daily digest
+2
+Morning digest auto-generated and shown
+7
+Weekly review
+2
+Sunday review auto-generated
+8
+Dashboard + polish
+1–2
+Stats, empty states, responsiveness
+9
+Settings + QA
+1
+User preferences, multi-tenant testing
+
+
+Phase 0 — Project Setup & Auth
+Goals
+Next.js 15 project initialized with App Router
+Tailwind CSS + shadcn/ui configured
+Supabase project created, environment variables set
+Auth working: sign up, login, logout, session persistence
+Protected route middleware in place
+
+Antigravity Agent Prompt
+Create a new Next.js 15 App Router project with TypeScript and Tailwind CSS. Install and configure shadcn/ui. Install @supabase/ssr and @supabase/supabase-js. Create a Supabase client utility for both server and browser contexts. Implement authentication with Supabase Auth: sign up page at /signup, login page at /login, logout action, and middleware that protects all routes under /dashboard, /inbox, /plan, /review, and /settings — redirecting unauthenticated users to /login. Store NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local. Use HTTP-only cookies for session persistence via @supabase/ssr.
+
+Key Files
+app/layout.tsx — root layout with Supabase provider
+lib/supabase/server.ts — server client
+lib/supabase/client.ts — browser client
+middleware.ts — route protection
+app/(auth)/login/page.tsx
+app/(auth)/signup/page.tsx
+
+
+Phase 1 — Frontend Shell & Navigation
+Goals
+All app pages created as stubs (no real data yet)
+Sidebar navigation with active state
+Consistent layout for all authenticated pages
+Page titles and basic structure in place
+
+Antigravity Agent Prompt
+Build the authenticated app shell for a work management tool. Create a sidebar navigation component with links to: Dashboard (/dashboard), Inbox (/inbox), Weekly Plan (/plan), Weekly Review (/review), and Settings (/settings). The sidebar should show the active route highlighted. Create stub pages for each route under app/(app)/ using a shared layout that includes the sidebar. Each stub page should have a page title heading and a placeholder message. Use shadcn/ui components. The design should be clean and minimal — dark sidebar (#1E293B), white content area, blue (#2563EB) accent for active nav items.
+
+
+Phase 2 — Database Schema & RLS
+Goals
+All tables created in Supabase
+Row Level Security enabled on every table
+RLS policies ensure user_id = auth.uid() on all operations
+Supabase TypeScript types generated
+
+Antigravity Agent Prompt
+Write Supabase SQL migrations to create the following tables with Row Level Security. Table 1 — work_items: id UUID PK default gen_random_uuid(), user_id UUID NOT NULL references auth.users(id) ON DELETE CASCADE, title TEXT NOT NULL, description TEXT, type TEXT CHECK (type IN ('task','note','idea','request')), source TEXT, created_at TIMESTAMPTZ DEFAULT now(), due_date DATE, effort_estimate TEXT, priority TEXT DEFAULT 'medium', status TEXT DEFAULT 'inbox', tags TEXT[], ai_category TEXT, ai_summary TEXT, ai_next_action TEXT. Table 2 — daily_digests: id UUID PK, user_id UUID NOT NULL references auth.users, date DATE, top_tasks JSONB, blockers TEXT[], overdue_items UUID[], ai_focus_summary TEXT, created_at TIMESTAMPTZ DEFAULT now(). Table 3 — weekly_reviews: id UUID PK, user_id UUID, week_start DATE, completed_count INT, overdue_count INT, carry_forward_items UUID[], ai_review_summary TEXT, improvement_suggestions TEXT[], created_at TIMESTAMPTZ DEFAULT now(). Table 4 — prompt_logs: id UUID PK, user_id UUID, workflow_name TEXT, input_reference UUID, prompt_version TEXT, model_used TEXT, output_text TEXT, tokens_used INT, created_at TIMESTAMPTZ DEFAULT now(). Enable RLS on all tables. Add SELECT, INSERT, UPDATE, DELETE policies using: USING (user_id = auth.uid()). Then run: npx supabase gen types typescript --project-id $PROJECT_ID > types/database.ts
+
+
+Phase 3 — Inbox Capture UI
+Goals
+Capture form on /inbox page
+Form fields: title (required), description, type, due date, tags
+On submit: item saved to Supabase, appears in list immediately
+List shows all user's work items with status, priority, category
+Items in "processing" state while AI classification runs
+
+Antigravity Agent Prompt
+Build the Inbox page at /inbox. Include a capture form at the top with fields: title (text input, required), description (textarea, optional), type (select: task/note/idea/request, default task), due_date (date picker, optional), tags (text input, comma-separated). On submit, save to Supabase work_items table with the authenticated user's user_id. After saving, show the item immediately in the list below with a "Processing..." badge — the AI classification will update it asynchronously. The items list should show: title, type badge, priority badge, ai_category (if set), ai_summary (if set), due_date, status. Sort by created_at DESC. Use optimistic UI updates. Subscribe to Supabase Realtime on work_items so the list updates when AI classification completes. Use shadcn/ui Card, Badge, Button, Input, Textarea, Select components.
+
+
+Phase 4 — AI Classification
+Goals
+Supabase Edge Function triggered on work_item insert
+Function calls OpenRouter with Gemini 2.0 Flash
+AI returns structured JSON: category, priority, effort, summary, next_action, tags
+work_item updated with AI fields
+Call logged in prompt_logs
+
+Antigravity Agent Prompt
+Create a Supabase Edge Function called classify-item that triggers on INSERT to the work_items table via a Postgres webhook. The function should: (1) Read the new item's title, description, type, and due_date. (2) Call OpenRouter API at https://openrouter.ai/api/v1/chat/completions using the model google/gemini-2.0-flash-exp with the OPENROUTER_API_KEY secret. (3) Send this system prompt: "You are a work item classifier. Return ONLY valid JSON with these exact fields: category (string), priority (one of: critical/high/medium/low/someday), effort_estimate (one of: low/medium/high), summary (one sentence), next_action (one concrete next step), tags (array of up to 3 strings). No other text." (4) Parse the JSON response. (5) Update the work_item row with the AI fields. (6) Insert a row into prompt_logs with workflow_name='classify', prompt_version='classify-v1', model_used, output_text, and tokens_used from the response. Handle parse errors by setting ai_category='unclassified' and logging the error. Set the OPENROUTER_API_KEY as a Supabase secret.
+
+
+Phase 5 — Weekly Planning Board
+Goals
+Kanban board at /plan showing current week's items
+Columns: Inbox, Planned, In Progress, Done
+Drag-and-drop to change status
+Inline edit: due date, priority, effort
+Filter by priority and category
+
+Antigravity Agent Prompt
+Build the Weekly Plan page at /plan. Fetch all work_items for the authenticated user where status is not "dropped" and (due_date is within the current week OR status is "in_progress" OR status is "planned"). Display as a Kanban board with 4 columns: Inbox (status=inbox), Planned (status=planned), In Progress (status=in_progress), Done (status=done). Each card shows: title, priority badge (color-coded: critical=red, high=orange, medium=blue, low=gray), ai_category, ai_next_action, due_date. Implement drag-and-drop between columns using @dnd-kit/core — dropping a card in a column updates its status in Supabase. Add a filter bar at the top: filter by priority (dropdown) and category (dropdown populated from distinct ai_category values). Cards should be clickable to open a slide-over panel with full item details and an edit form.
+
+
+Phase 6 — Daily Digest
+Goals
+Edge Function cron job runs at 07:00 user local time
+Fetches open/overdue items, calls AI for focus summary
+Digest stored in daily_digests table
+Dashboard shows today's digest prominently
+
+Antigravity Agent Prompt
+Create a Supabase Edge Function called generate-daily-digest scheduled to run daily at 07:00 UTC. The function should: (1) Fetch all users from auth.users. (2) For each user, fetch their work_items where status IN ('inbox','planned','in_progress') ordered by priority. (3) Identify overdue items (due_date < today). (4) Call OpenRouter (google/gemini-2.0-flash-exp) with a prompt that receives the top 10 items as JSON and asks for: top_tasks (array of 3-5 item IDs with one-sentence reason), blockers (array of blocker descriptions identified from item text), ai_focus_summary (2-3 sentence morning briefing). (5) Upsert a row into daily_digests for today and the user. (6) Log to prompt_logs. Then build the Dashboard page at /dashboard showing: today's ai_focus_summary in a highlighted card at top, top_tasks list with ai_next_action for each, overdue_items count badge, and quick stats: total active items, items due today, items completed this week.
+
+
+Phase 7 — Weekly Review
+Goals
+Edge Function cron runs Sunday at 18:00
+Calculates completion stats for the week
+AI generates review summary and improvement suggestions
+/review page shows latest review and history
+
+Antigravity Agent Prompt
+Create a Supabase Edge Function called generate-weekly-review scheduled to run every Sunday at 18:00 UTC. For each user: (1) Calculate week_start (last Monday). (2) Count work_items completed this week (status=done, updated_at within the week). (3) Count overdue items (due_date < today, status not done/dropped). (4) Collect carry_forward_items (planned/in_progress items not completed). (5) Call OpenRouter with completed items, overdue items, and carry-forward items as context. Request: ai_review_summary (3-4 sentences covering what got done, what slipped, patterns noticed) and improvement_suggestions (array of 2-3 concrete actionable suggestions for next week). (6) Insert into weekly_reviews. Build the /review page showing the latest weekly review prominently, and a list of past reviews below it sorted by week_start DESC. Each past review shows week_start date, completed_count, and is expandable to show the full summary.
+
+
+Phase 8 — Dashboard Polish & Stats
+Antigravity Agent Prompt
+Polish the Dashboard at /dashboard. Add a stats row below the digest showing 4 metric cards: (1) Active Tasks — count of work_items with status in_progress or planned. (2) Due Today — count of work_items with due_date = today. (3) Overdue — count of work_items with due_date < today and status not done/dropped. (4) Completed This Week — count of work_items completed since last Monday. Add a Quick Capture input field on the dashboard (title only, type defaults to task) that saves to work_items and triggers AI classification. Ensure all empty states are actionable — if no digest yet, show "Your morning digest will appear here at 7:00 AM." If inbox is empty, show "Capture your first task to get started." Make the layout fully responsive down to 375px mobile width.
+
+
+Phase 9 — Settings & QA
+Settings Page
+Digest time preference (default 07:00, stored in user profile table)
+Account info display (email)
+Logout button
+
+QA Checklist
+Test
+How to Verify
+RLS isolation
+Create 2 accounts. Confirm Account A cannot see Account B's items — check via Supabase table editor and UI
+AI classification
+Add 5 items with varied titles. Confirm all get classified within 10 seconds
+Daily digest
+Manually invoke Edge Function. Confirm digest appears on dashboard
+Weekly review
+Manually invoke Edge Function. Confirm review appears on /review
+Auth protection
+Log out and try to access /dashboard directly — confirm redirect to /login
+Mobile layout
+Open on 375px viewport. Confirm sidebar collapses, cards stack
+Empty states
+Test with fresh account — confirm all empty states show helpful messages
+Prompt logs
+After AI calls, confirm rows appear in prompt_logs with correct user_id
+
+
+Antigravity-Specific Tips
+Antigravity 2.0 works best when each agent prompt is self-contained. Give full context — don't assume the agent remembers previous phases.
+
+Use Manager View to run frontend and backend agents in parallel — e.g. Phase 3 UI agent + Phase 4 Edge Function agent simultaneously
+After each phase, take a screenshot of the working state and paste into the next agent prompt as context
+For RLS: always test with two real accounts, not just the Supabase table editor
+Edge Function secrets: set via Supabase Dashboard → Settings → Edge Functions → Secrets, not in code
+For realtime subscriptions: ensure the Supabase Realtime is enabled on the relevant tables in Supabase Dashboard
+If an agent generates incorrect Supabase SQL, run the migration in Supabase SQL Editor and paste the error back to the agent
+
+Recommended Model Split in Antigravity
+Task
+Recommended Model
+Architecture planning + Phase prompts
+Claude Opus 4.6
+Actual code generation
+Claude Sonnet 4.6 or Gemini 3.5 Flash
+SQL migration writing
+Claude Sonnet 4.6
+Edge Function logic
+Claude Sonnet 4.6
+UI polish + styling
+Gemini 3.5 Flash (fast, good at Tailwind)

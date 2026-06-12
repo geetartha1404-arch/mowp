@@ -1,0 +1,432 @@
+
+PRODUCT REQUIREMENTS DOCUMENT
+AI-Assisted Personal Work Management OS
+Multi-Tenant Edition
+Version 1.0  ·  June 2026  ·  Built for Antigravity IDE
+
+Field
+Value
+Product Name
+MOWP — AI-Assisted Personal Work Management
+Version
+1.0 (MVP)
+Target Platform
+Web (Next.js) — Desktop responsive
+Architecture
+Multi-tenant SaaS, user-isolated data
+Primary Stack
+Next.js · Supabase · OpenRouter (Gemini 2.0 Flash)
+IDE
+Google Antigravity 2.0
+Status
+Pre-development — PRD approved
+
+
+1. Product Overview
+MOWP is an AI-assisted personal work management system built as a multi-tenant SaaS. Each user gets their own isolated workspace where they can capture tasks, notes, and ideas; receive AI-driven prioritization; plan their week; and get automated daily and weekly review summaries.
+
+The product is not a universal life OS. Its job-to-be-done is narrow and clear: reduce task fragmentation and planning overhead for solo knowledge workers by automating the capture → classify → plan → review loop.
+
+Positioning: "An AI-assisted work OS that turns scattered tasks into a clear daily plan — automatically."
+
+1.1 Target User
+Solo knowledge workers: developers, designers, PMs, consultants, writers
+People managing multiple concurrent responsibilities without a team system
+Individuals who want AI to do the prioritization thinking, not just suggest completions
+
+1.2 Core Value Proposition
+Pain
+MOWP Solution
+Tasks scattered across notes, reminders, email
+Single inbox capture — one place for everything
+Manual prioritization overhead every morning
+AI classifies and ranks on capture
+No system for daily focus
+Automated morning digest with top priorities
+No visibility into weekly progress
+Automated weekly review summary with patterns
+Planning takes too long
+Weekly plan pre-populated by AI, user just adjusts
+
+
+2. MVP Scope
+Rule: If a feature is not in this list, it is out of scope for V1. No exceptions.
+
+2.1 In Scope — V1
+User authentication (sign up, login, logout, password reset)
+Multi-tenant data isolation — each user sees only their own data
+Task/note/idea capture via simple inbox form
+AI categorization, priority scoring, and next-action suggestion on capture
+Weekly planning board — view, drag-reorder, update status
+Daily digest — auto-generated each morning with top tasks, overdue, blockers
+Weekly review — auto-generated each Sunday with completion stats and AI summary
+Basic dashboard — active task count, overdue count, completion rate
+Prompt logging — every AI call logged for debugging and transparency
+
+2.2 Explicitly Out of Scope — V1
+Calendar sync (Google Calendar, Outlook)
+Team collaboration or shared workspaces
+Voice input or voice assistant flows
+Document search across connected tools
+Habit tracking or personal life management
+Multi-agent orchestration
+Rich analytics dashboards
+Mobile native app (iOS/Android)
+Integrations with Slack, Notion, Linear, etc.
+
+
+3. System Architecture
+3.1 Tech Stack
+Layer
+Technology
+Role
+Cost
+Frontend
+Next.js 15 (App Router)
+UI, routing, SSR
+Free (Vercel)
+Auth
+Supabase Auth
+Sign up, login, sessions, JWT
+Free tier
+Database
+Supabase Postgres
+All data + Row Level Security
+Free tier (500MB)
+Realtime
+Supabase Realtime
+Live digest/review updates
+Free tier
+Automation
+Supabase Edge Functions
+Scheduled jobs, AI call routing
+Free tier
+AI Layer
+OpenRouter → Gemini 2.0 Flash
+Classify, prioritize, summarize
+Pay-per-use (~$0.10/1M tokens)
+Hosting
+Vercel
+Next.js deployment
+Free tier
+Styling
+Tailwind CSS + shadcn/ui
+UI component system
+Free
+
+3.2 Multi-Tenant Design
+Multi-tenancy is implemented via Supabase Row Level Security (RLS). Every table has a user_id column. RLS policies enforce that users can only read and write their own rows — at the database level, not just the application level. No custom tenant logic is needed in Next.js.
+
+Every Supabase table has: user_id UUID NOT NULL REFERENCES auth.users(id). Every RLS policy uses: USING (user_id = auth.uid()).
+
+3.3 Data Model
+work_items
+Field
+Type
+Notes
+id
+UUID PK
+auto-generated
+user_id
+UUID FK
+references auth.users — RLS enforced
+title
+TEXT NOT NULL
+Required
+description
+TEXT
+Optional detail
+type
+ENUM('task','note','idea','request')
+
+source
+TEXT
+Where it came from (manual, email, etc.)
+created_at
+TIMESTAMPTZ
+auto
+due_date
+DATE
+Nullable
+effort_estimate
+ENUM('low','medium','high')
+AI-suggested
+priority
+ENUM('critical','high','medium','low','someday')
+AI-suggested
+status
+ENUM('inbox','planned','in_progress','done','dropped')
+
+tags
+TEXT[]
+Array of tags
+ai_category
+TEXT
+AI-generated category label
+ai_summary
+TEXT
+AI-generated one-liner
+ai_next_action
+TEXT
+AI-generated concrete next step
+
+daily_digests
+Field
+Type
+Notes
+id
+UUID PK
+
+user_id
+UUID FK
+RLS
+date
+DATE
+One per user per day
+top_tasks
+JSONB
+Array of work_item IDs with AI reasoning
+blockers
+TEXT[]
+AI-identified blockers
+overdue_items
+UUID[]
+IDs of overdue work_items
+ai_focus_summary
+TEXT
+AI-written morning briefing
+created_at
+TIMESTAMPTZ
+auto
+
+weekly_reviews
+Field
+Type
+Notes
+id
+UUID PK
+
+user_id
+UUID FK
+RLS
+week_start
+DATE
+Monday of the week
+completed_count
+INT
+
+overdue_count
+INT
+
+carry_forward_items
+UUID[]
+
+ai_review_summary
+TEXT
+AI-written weekly wrap
+improvement_suggestions
+TEXT[]
+AI-generated suggestions
+created_at
+TIMESTAMPTZ
+auto
+
+prompt_logs
+Field
+Type
+Notes
+id
+UUID PK
+
+user_id
+UUID FK
+RLS
+workflow_name
+TEXT
+'classify' | 'digest' | 'weekly_review'
+input_reference
+UUID
+ID of the work_item or digest triggered
+prompt_version
+TEXT
+e.g. "classify-v1"
+model_used
+TEXT
+e.g. "google/gemini-2.0-flash-exp"
+output_text
+TEXT
+Full AI response
+tokens_used
+INT
+For cost tracking
+created_at
+TIMESTAMPTZ
+auto
+
+
+4. Feature Specifications
+4.1 Authentication
+Supabase Auth handles all authentication. Next.js uses the @supabase/ssr package for server-side session management.
+
+Sign up with email + password
+Email verification on sign-up
+Login / logout
+Password reset via email
+Session persistence via HTTP-only cookies (Supabase SSR)
+Protected routes — all app pages redirect to /login if unauthenticated
+
+4.2 Inbox Capture
+The primary entry point. Users add any work item — task, idea, note, request — in one action. After save, an AI classification job runs asynchronously and updates the item within seconds.
+
+Required field: title
+Optional: description, type, due date, tags
+After save: item appears in inbox with status "processing"
+AI classification completes: category, priority, summary, next action populated
+Item moves to "inbox" status, ready for planning
+
+4.3 AI Classification Flow
+Model: google/gemini-2.0-flash-exp via OpenRouter. Prompt version logged on every call.
+
+On item creation, an Edge Function is triggered with the item title, description, type, and due date. The AI returns a structured JSON response:
+
+AI Output Field
+Description
+category
+Short label: "Engineering", "Strategy", "Admin", "Learning", etc.
+priority
+One of: critical / high / medium / low / someday
+effort_estimate
+low / medium / high
+summary
+One-sentence plain-English description of the task
+next_action
+The single most concrete next physical action
+tags
+Up to 3 suggested tags
+
+4.4 Weekly Planning Board
+View: Kanban-style or list view, grouped by status
+Columns: Inbox → Planned → In Progress → Done
+Filter by: week, priority, category, tag
+Drag to reorder within columns
+Inline edit: due date, effort, priority, status
+AI next action visible on each card
+
+4.5 Daily Digest
+Auto-generated each morning at a user-configured time (default: 07:00 local). Triggered by a Supabase Edge Function cron job.
+
+Top 3–5 priority tasks for today (AI-selected)
+Overdue items list
+Blockers identified by AI from item descriptions
+AI-written focus summary: 2–3 sentences
+Visible on dashboard homepage and notification channel (email optional)
+
+4.6 Weekly Review
+Auto-generated every Sunday at 18:00. Triggered by cron Edge Function.
+
+Completed count vs planned count
+Overdue and carry-forward items
+AI-written review: what got done, what slipped, why
+2–3 AI improvement suggestions for next week
+Historical reviews accessible via review archive page
+
+
+5. UX & Navigation
+5.1 Page Structure
+Route
+Page
+Description
+/login
+Login
+Auth page — redirects to /dashboard if logged in
+/signup
+Sign Up
+Registration
+/dashboard
+Dashboard
+Today's digest + quick stats + quick capture
+/inbox
+Inbox
+All items not yet planned — new captures land here
+/plan
+Weekly Plan
+Kanban board for the current week
+/review
+Weekly Review
+Latest review summary + history list
+/settings
+Settings
+Digest time, notification preferences, account
+
+5.2 Design Principles
+Minimal UI — every element earns its place
+AI output always clearly labeled — never presented as user-created
+Empty states are actionable — not decorative
+Mobile-responsive — usable on phone even if not optimized
+No onboarding wizard — the inbox is the onboarding
+
+
+6. AI Behavior Specification
+The AI should make structured work decisions, not act as a general-purpose chatbot.
+
+6.1 What the AI Does
+Use Case
+Trigger
+Output
+Classification
+Item created
+Category, priority, effort, summary, next action
+Daily Digest
+Cron 07:00
+Top tasks, blockers, focus summary
+Weekly Review
+Cron Sunday 18:00
+Stats summary, improvement suggestions
+
+6.2 Prompt Design Rules
+All prompts request JSON output — parse, never eval
+Each prompt has a version string stored in prompt_logs
+Prompts constrained: AI returns only structured fields, no prose unless asked
+Failure handling: if AI response fails to parse, item is flagged for manual review
+No user-facing "chat" interface — AI is a background service
+
+
+7. Risks & Mitigations
+Risk
+Likelihood
+Mitigation
+Scope creep into life OS
+High
+This PRD is the contract. Every feature request goes through V2 backlog.
+Weak AI value (generic outputs)
+Medium
+Prompt engineering with examples. Log all outputs. Iterate v2 prompts.
+Supabase free tier limits
+Low
+MVP stays well within 500MB and 50k auth users.
+OpenRouter API latency
+Medium
+Classification is async — user not blocked. Digest pre-generated.
+RLS misconfiguration
+Medium
+Test every policy with a second test account before launch.
+Cron job reliability
+Low
+Edge Functions crons are reliable. Add error logging to prompt_logs.
+
+
+8. Success Metrics
+Since this is a solo-use portfolio product initially, metrics are self-measured:
+
+Metric
+Target (Week 4)
+Daily digest generated without error
+7 consecutive days
+AI classification accuracy (self-rated)
+>80% of classifications feel correct
+Weekly review generated
+Every Sunday without manual trigger
+Time to capture a new task
+<15 seconds
+Weekly planning time reduced
+Subjectively faster than previous system
