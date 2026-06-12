@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { headers } from 'next/headers'
+import { sendWelcomeEmail } from '@/lib/mail'
 
 export async function login(prevState: unknown, formData: FormData) {
   const supabase = await createClient()
@@ -49,6 +50,13 @@ export async function signup(prevState: unknown, formData: FormData) {
 
   if (error) {
     return { error: error.message }
+  }
+
+  // Send welcome email via Brevo
+  try {
+    await sendWelcomeEmail(email)
+  } catch (mailError) {
+    console.error('Failed to send welcome email:', mailError)
   }
 
   return { success: true }
