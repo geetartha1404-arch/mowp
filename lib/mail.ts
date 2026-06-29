@@ -177,8 +177,8 @@ export async function sendWelcomeEmail(toEmail: string) {
 
     const data = await response.json();
     return { success: true, data };
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error occurred while sending welcome email:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: error instanceof Error ? error.message : 'An unknown error occurred' };
   }
 }
