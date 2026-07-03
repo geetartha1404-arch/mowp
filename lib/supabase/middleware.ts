@@ -46,7 +46,11 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith('/settings') ||
     pathname === '/'
 
-  const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/signup')
+  const isAuthRoute =
+    pathname.startsWith('/login') ||
+    pathname.startsWith('/signup') ||
+    pathname.startsWith('/forgot-password') ||
+    pathname.startsWith('/reset-password')
 
   if (!claims && isProtectedRoute) {
     const url = request.nextUrl.clone()
