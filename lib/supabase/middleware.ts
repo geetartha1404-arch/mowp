@@ -76,13 +76,14 @@ export async function updateSession(request: NextRequest) {
     }
 
     return supabaseResponse
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Middleware caught error:", error)
+    const err = error as Error
     return new NextResponse(
       JSON.stringify({
         message: "Middleware error",
-        error: error?.message || String(error),
-        stack: error?.stack || "No stack trace available",
+        error: err?.message || String(error),
+        stack: err?.stack || "No stack trace available",
         env: {
           NEXT_PUBLIC_SUPABASE_URL: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
           NEXT_PUBLIC_SUPABASE_ANON_KEY: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
